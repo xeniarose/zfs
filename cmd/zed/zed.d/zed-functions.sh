@@ -213,6 +213,10 @@ zed_notify()
     [ "${rv}" -eq 0 ] && num_success=$((num_success + 1))
     [ "${rv}" -eq 1 ] && num_failure=$((num_failure + 1))
 
+    zed_notify_dbus "${subject}" "${pathname}"; rv=$?
+    [ "${rv}" -eq 0 ] && num_success=$((num_success + 1))
+    [ "${rv}" -eq 1 ] && num_failure=$((num_failure + 1))
+
     [ "${num_success}" -gt 0 ] && return 0
     [ "${num_failure}" -gt 0 ] && return 1
     return 2
@@ -718,6 +722,89 @@ zed_notify_gotify()
     return 0
 }
 
+
+# zed_notify_dbus (subject, pathname)
+#
+# Send a desktop notification via D-Bus.
+# The variable (ZED_USE_DBUS) defines whether to use D-Bus to send desktop
+# notifications.
+#
+# Requires systemd (busctl) executables to be installed in the standard PATH.
+#
+# References
+#   https://specifications.freedesktop.org/notification-spec/latest/
+#   https://www.freedesktop.org/software/systemd/man/latest/busctl.html
+#
+# Arguments
+#   subject: notification subject
+#   pathname: pathname containing the notification message (OPTIONAL)
+#
+# Globals
+#   ZED_USE_DBUS
+#
+# Return
+#   0: notification sent
+#   1: notification failed
+#   2: not configured
+#
+zed_notify_dbus()
+{
+    local subject="$1"
+    local pathname="${2:-"/dev/null"}"
+    local msg_body
+    local msg_out
+    local msg_err
+    local exit_status=0
+    local dir
+    local userid
+
+    [ -n "${ZED_USE_DBUS}" ] || return 2
+
+    if [ ! -r "${pathname}" ]; then
+        zed_log_err "dbus cannot read \"${pathname}\""
+        return 1
+    fi
+
+    zed_check_cmd "busctl" || return 1
+
+    # Read the message body in.
+    #
+    msg_body="$(cat "${pathname}")"
+
+    if [ -z "${msg_body}" ]
+    then
+        msg_body=$subject
+        subject=""
+    fi
+
+    # Send the notification to all users with a dbus session and check for
+    # errors.
+    # We use busctl(1) manually rather than eg notify-send(1) due to its
+    # ability to send D-Bus messages from root to a non-root user with the
+    # "--machine=<user>@.host" flag.
+    for dir in /run/user/*; do
+        if [ -S "$dir/bus" ]; then
+            userid="$(basename "$dir")"
+            msg_out="$( \
+                busctl --user --machine "$userid@.host" -- \
+                    call org.freedesktop.Notifications \
+                    /org/freedesktop/Notifications \
+                    org.freedesktop.Notifications Notify \
+                    "susssasa{sv}i" \
+                    "ZFS" 0 "drive-harddisk-symbolic" \
+                    "$subject" "$msg_body"
+                    0 2 urgency y 2 sender-pid x "$$" "-1" \
+                2>/dev/null
+            )"; rv=$?
+
+            if [ "${rv}" -ne 0 ]; then
+                zed_log_err "busctl exit=${rv}"
+                exit_status=1
+            fi
+        fi
+    done
+    return "$exit_status"
+}
 
 
 # zed_rate_limit (tag, [interval])
