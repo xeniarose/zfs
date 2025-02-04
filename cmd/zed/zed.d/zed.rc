@@ -176,3 +176,10 @@ ZED_SYSLOG_SUBCLASS_EXCLUDE="history_event"
 #  <https://docs.ntfy.sh/install/>
 # https://ntfy.sh by default; uncomment to enable an alternative service url.
 #ZED_NTFY_URL="https://ntfy.sh"
+
+##
+# Whether to send desktop notifications via D-Bus
+# If defined, busctl(1) will be used to send desktop notifications via
+# the org.freedesktop.Notifications D-Bus interface
+# Disabled by default; uncomment to enable.
+#ZED_USE_DBUS=1
